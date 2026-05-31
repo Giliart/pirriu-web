@@ -48,7 +48,7 @@ export default function LoginPage() {
     }
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || window.location.origin}/api/auth/callback?next=/nova-senha&type=recovery`,
+      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || window.location.origin}/nova-senha`,
     });
 
     setMessage(error ? translateAuthError(error.message) : "Enviamos um link de redefinição para seu e-mail.");
