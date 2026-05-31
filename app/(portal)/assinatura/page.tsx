@@ -248,7 +248,7 @@ export default async function AssinaturaPage() {
                       {buttonLabel}
                     </button>
                   ) : action.kind === "upgrade" ? (
-                    <form action="/api/create-checkout" method="post">
+                    <form action="/api/create-subscription" method="post">
                       <input type="hidden" name="plan_id" value={planItem.id} />
                       <button className="pw-plan-button pw-plan-button--upgrade" type="submit">
                         {buttonLabel}

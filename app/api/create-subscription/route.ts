@@ -99,7 +99,6 @@ export async function POST(request: Request) {
     reason: `PIRRIU - ${plan.name}`,
     external_reference: order.id,
     payer_email:
-      process.env.MERCADO_PAGO_TEST_PAYER_EMAIL ||
       profile.email ||
       auth.user.email,
     back_url: `${baseUrl}/assinatura?checkout=retorno`,
@@ -140,15 +139,35 @@ export async function POST(request: Request) {
 
   const checkoutUrl = mpData.init_point || mpData.sandbox_init_point || null;
   const mpSubscriptionId = mpData.id || null;
+  const nowIso = new Date().toISOString();
 
   await supabaseAdmin
     .from("subscription_orders")
     .update({
       checkout_url: checkoutUrl,
       external_payment_id: mpSubscriptionId,
-      updated_at: new Date().toISOString(),
+      updated_at: nowIso,
     })
     .eq("id", order.id);
+
+  await supabaseAdmin
+    .from("subscriptions")
+    .insert({
+      account_id: profile.account_id,
+      plan_id: plan.id,
+      plan_slug: plan.slug,
+      plan_name: plan.name,
+      provider: "mercado_pago",
+      mp_subscription_id: mpSubscriptionId,
+      mp_preapproval_id: mpSubscriptionId,
+      external_reference: order.id,
+      status: String(mpData.status || "pending"),
+      billing_cycle: billingCycle,
+      amount,
+      currency: "BRL",
+      raw_payload: mpData,
+      updated_at: nowIso,
+    });
 
   if (!checkoutUrl) {
     return NextResponse.json(

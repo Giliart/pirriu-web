@@ -70,9 +70,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://pirriu.app";
     const payerEmail =
-      process.env.MERCADO_PAGO_TEST_PAYER_EMAIL ||
       profile.email ||
       auth.user.email ||
       undefined;
@@ -101,6 +100,7 @@ export async function POST(request: Request) {
           failure: `${siteUrl}/api/mercadopago/sync-payment?result=failure`,
           pending: `${siteUrl}/api/mercadopago/sync-payment?result=pending`,
         },
+        auto_return: "approved",
       }),
     });
 

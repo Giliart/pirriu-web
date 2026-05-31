@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { CreditCard, Home, LayoutDashboard, Menu, UserRound, X } from "lucide-react";
 import { Logo } from "./Logo";
 
 function isPublicAvatar(url?: string | null) {
@@ -13,6 +15,12 @@ function getFirstName(name?: string | null) {
   if (!clean) return "Usuário";
   return clean.split(" ")[0];
 }
+
+const menuItems = [
+  { href: "/painel", label: "Painel", icon: LayoutDashboard },
+  { href: "/resumo", label: "Resumo", icon: UserRound },
+  { href: "/assinatura", label: "Assinatura", icon: CreditCard },
+];
 
 export function Header({
   logged = false,
@@ -26,17 +34,18 @@ export function Header({
   const safeAvatar = isPublicAvatar(avatarUrl) ? avatarUrl : null;
   const [open, setOpen] = useState(false);
   const firstName = getFirstName(userName);
+  const pathname = usePathname();
 
   return (
     <header className="pw-header">
       <div className="pw-container pw-header-inner">
         {logged ? (
           <>
-            <div className="pw-mobile-user-head">
+            <div className="pw-mobile-user-head pw-header-user">
               {safeAvatar ? (
                 <img src={safeAvatar} alt="Foto de perfil" className="pw-mobile-user-avatar" />
               ) : (
-                <div className="pw-mobile-user-avatar" />
+                <div className="pw-mobile-user-avatar pw-mobile-user-avatar--fallback">{firstName[0]}</div>
               )}
 
               <div className="pw-mobile-user-copy">
@@ -53,16 +62,23 @@ export function Header({
               className="pw-mobile-menu-btn"
               type="button"
               onClick={() => setOpen(!open)}
-              aria-label="Abrir menu"
+              aria-label={open ? "Fechar menu" : "Abrir menu"}
+              aria-expanded={open}
             >
-              ☰
+              {open ? <X size={26} /> : <Menu size={27} />}
             </button>
 
             <nav className="pw-nav" aria-label="Navegação principal">
-              <Link className="pw-nav-link" href="/painel">Início</Link>
-              <Link className="pw-nav-link" href="/painel">Painel</Link>
-              <Link className="pw-nav-link" href="/resumo">Resumo</Link>
-              <Link className="pw-nav-link pw-nav-link--active" href="/assinatura">Assinatura</Link>
+              {menuItems.map((item) => {
+                const Icon = item.icon;
+                const active = pathname === item.href;
+                return (
+                  <Link key={item.href} className={`pw-nav-link ${active ? "pw-nav-link--active" : ""}`} href={item.href}>
+                    <Icon size={16} />
+                    <span>{item.label}</span>
+                  </Link>
+                );
+              })}
               {safeAvatar ? (
                 <img src={safeAvatar} alt="Foto de perfil" width={46} height={46} className="pw-avatar" />
               ) : (
@@ -82,7 +98,10 @@ export function Header({
             </div>
 
             <nav className="pw-nav pw-nav-public" aria-label="Navegação principal">
-              <Link className="pw-nav-link pw-nav-link--active" href="/login">Login</Link>
+              <Link className="pw-nav-link pw-nav-link--active" href="/login">
+                <Home size={16} />
+                <span>Login</span>
+              </Link>
             </nav>
           </>
         )}
@@ -90,10 +109,16 @@ export function Header({
 
       {logged && open && (
         <div className="pw-mobile-dropdown">
-          <Link href="/painel"><span className="pw-menu-dot" />Início</Link>
-          <Link href="/painel"><span className="pw-menu-dot" />Painel</Link>
-          <Link href="/resumo"><span className="pw-menu-dot" />Resumo</Link>
-          <Link href="/assinatura"><span className="pw-menu-dot pw-menu-dot--gold" />Assinatura</Link>
+          {menuItems.map((item) => {
+            const Icon = item.icon;
+            const active = pathname === item.href;
+            return (
+              <Link key={item.href} href={item.href} className={active ? "active" : ""} onClick={() => setOpen(false)}>
+                <span className="pw-mobile-menu-icon"><Icon size={19} /></span>
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
         </div>
       )}
     </header>

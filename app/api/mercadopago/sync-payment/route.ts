@@ -3,7 +3,7 @@ import { applyMercadoPagoPayment, fetchMercadoPagoPayment } from "@/lib/mercadop
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || url.origin;
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://pirriu.app";
 
   const paymentId =
     url.searchParams.get("payment_id") ||
