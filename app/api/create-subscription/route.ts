@@ -102,6 +102,7 @@ export async function POST(request: Request) {
       profile.email ||
       auth.user.email,
     back_url: `${baseUrl}/assinatura?checkout=retorno`,
+    notification_url: `${baseUrl}/api/webhooks/mercadopago`,
     status: "pending",
     auto_recurring: {
       frequency,

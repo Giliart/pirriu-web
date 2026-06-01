@@ -91,25 +91,25 @@ function mapPaymentToOrderStatus(status: string) {
   return "pending";
 }
 
+function calculateNextPaymentDate(billingCycle?: string | null) {
+  const date = new Date();
+  date.setMonth(date.getMonth() + (billingCycle === "yearly" ? 12 : 1));
+  return date.toISOString();
+}
+
 async function activateAccountPlan(accountId: string, planId: string, status: string) {
-  if (status === "active") {
-    await supabaseAdmin
-      .from("accounts")
-      .update({
-        plan_id: planId,
-        subscription_status: "active",
-      })
-      .eq("id", accountId);
+  // Só promovemos/liberamos o plano quando houver pagamento/assinatura ativa.
+  // Tentativas recusadas, canceladas ou expiradas NÃO devem rebaixar a conta aqui,
+  // porque o usuário pode ter outra assinatura paga válida ou estar no período já pago.
+  if (status !== "active") return;
 
-    return;
-  }
-
-  if (["cancelled", "expired", "failed", "paused"].includes(status)) {
-    await supabaseAdmin
-      .from("accounts")
-      .update({ subscription_status: status })
-      .eq("id", accountId);
-  }
+  await supabaseAdmin
+    .from("accounts")
+    .update({
+      plan_id: planId,
+      subscription_status: "active",
+    })
+    .eq("id", accountId);
 }
 
 async function applyPayment(paymentId: string) {
@@ -153,15 +153,13 @@ async function applyPayment(paymentId: string) {
   if (status === "active") {
     subscriptionUpdate.started_at = nowIso;
     subscriptionUpdate.cancelled_at = null;
+    subscriptionUpdate.next_payment_date = calculateNextPaymentDate(order?.billing_cycle);
   }
 
   if (status === "cancelled") {
     subscriptionUpdate.cancelled_at = nowIso;
   }
 
-  if (payment?.payer?.email) {
-    subscriptionUpdate.customer_email = payment.payer.email;
-  }
 
   const { data: subscription } = await supabaseAdmin
     .from("subscriptions")

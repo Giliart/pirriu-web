@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase-server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export function safeAvatarUrl(url?: string | null) {
   if (!url) return null;
@@ -13,6 +14,89 @@ export function initialsFromName(name?: string | null) {
   return `${parts[0]?.[0] || "U"}${parts[1]?.[0] || ""}`.toUpperCase();
 }
 
+
+function isPastDate(value?: string | null) {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  return date.getTime() <= Date.now();
+}
+
+async function getBasicPlan() {
+  const { data } = await supabaseAdmin
+    .from("plans")
+    .select("id, slug, name, max_active_clients, max_rounds, max_members, price_monthly, price_label, checkout_url, checkout_url_yearly, price_yearly_label")
+    .or("slug.eq.basic,name.ilike.Basic")
+    .order("sort_order", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  return data;
+}
+
+async function reconcileAccountSubscription(account: any) {
+  if (!account?.id) return { account, latestSubscription: null, basicPlan: null };
+
+  const { data: subscriptions } = await supabaseAdmin
+    .from("subscriptions")
+    .select("id, account_id, plan_id, plan_slug, plan_name, status, next_payment_date, cancelled_at, started_at, updated_at, created_at")
+    .eq("account_id", account.id)
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  const rows = subscriptions || [];
+
+  // Assinatura que dá direito ao plano: ativa/autorizada, ou cancelada mas ainda dentro do período pago.
+  // Tentativas recusadas/canceladas sem started_at não devem derrubar uma assinatura válida anterior.
+  const entitlementSubscription =
+    rows.find((item: any) => ["active", "authorized"].includes(String(item.status || "").toLowerCase())) ||
+    rows.find((item: any) => {
+      const status = String(item.status || "").toLowerCase();
+      return ["cancelled", "canceled"].includes(status) && !!item.started_at && !!item.next_payment_date && !isPastDate(item.next_payment_date);
+    }) ||
+    null;
+
+  let latestSubscription = entitlementSubscription || rows[0] || null;
+  let basicPlan: any = null;
+
+  if (entitlementSubscription?.plan_id) {
+    const desiredStatus = ["cancelled", "canceled"].includes(String(entitlementSubscription.status || "").toLowerCase())
+      ? "active"
+      : String(entitlementSubscription.status || "active").toLowerCase();
+
+    if (account.plan_id !== entitlementSubscription.plan_id || account.subscription_status !== desiredStatus) {
+      await supabaseAdmin
+        .from("accounts")
+        .update({
+          plan_id: entitlementSubscription.plan_id,
+          subscription_status: desiredStatus,
+        })
+        .eq("id", account.id);
+
+      account = { ...account, plan_id: entitlementSubscription.plan_id, subscription_status: desiredStatus };
+    }
+
+    return { account, latestSubscription, basicPlan };
+  }
+
+  // Sem assinatura válida: volta para Basic.
+  basicPlan = await getBasicPlan();
+
+  if (basicPlan?.id && (account.plan_id !== basicPlan.id || account.subscription_status !== "cancelled")) {
+    await supabaseAdmin
+      .from("accounts")
+      .update({
+        plan_id: basicPlan.id,
+        subscription_status: "cancelled",
+      })
+      .eq("id", account.id);
+
+    account = { ...account, plan_id: basicPlan.id, subscription_status: "cancelled" };
+  }
+
+  return { account, latestSubscription, basicPlan };
+}
+
 export async function getPortalOverview(userId: string) {
   const supabase = await createClient();
 
@@ -24,13 +108,15 @@ export async function getPortalOverview(userId: string) {
 
   const accountId = profile?.account_id || null;
 
-  const { data: account } = accountId
+  const { data: rawAccount } = accountId
     ? await supabase
         .from("accounts")
         .select("id, account_code, name, plan_id, subscription_status, max_active_clients_override, max_rounds_override, max_members_override")
         .eq("id", accountId)
         .maybeSingle()
     : { data: null } as any;
+
+  const { account, latestSubscription } = await reconcileAccountSubscription(rawAccount);
 
   const { data: plan } = account?.plan_id
     ? await supabase
@@ -70,6 +156,7 @@ export async function getPortalOverview(userId: string) {
     profile,
     profileError,
     account,
+    latestSubscription,
     plan: finalPlan,
     avatarUrl: safeAvatarUrl(profile?.avatar_url),
     stats: {

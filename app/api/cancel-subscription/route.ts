@@ -23,7 +23,7 @@ export async function POST() {
 
     const { data: subscription } = await supabaseAdmin
       .from("subscriptions")
-      .select("id, mp_preapproval_id, mp_subscription_id")
+      .select("id, mp_preapproval_id, mp_subscription_id, billing_cycle, next_payment_date")
       .eq("account_id", profile.account_id)
       .in("status", ["active", "authorized", "pending"])
       .order("created_at", { ascending: false })
@@ -33,7 +33,19 @@ export async function POST() {
     const mpPreapprovalId = subscription?.mp_preapproval_id || subscription?.mp_subscription_id;
     const accessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN;
 
+    let nextPaymentDate: string | null = null;
+
     if (mpPreapprovalId && accessToken) {
+      const currentResponse = await fetch(`https://api.mercadopago.com/preapproval/${mpPreapprovalId}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        cache: "no-store",
+      }).catch(() => null);
+
+      if (currentResponse?.ok) {
+        const currentSubscription = await currentResponse.json().catch(() => null);
+        nextPaymentDate = currentSubscription?.next_payment_date || null;
+      }
+
       await fetch(`https://api.mercadopago.com/preapproval/${mpPreapprovalId}`, {
         method: "PUT",
         headers: {
@@ -44,17 +56,33 @@ export async function POST() {
       }).catch(() => null);
     }
 
+    const now = new Date();
+    const nowIso = now.toISOString();
+
+    if (!nextPaymentDate) {
+      if (subscription?.next_payment_date) {
+        nextPaymentDate = subscription.next_payment_date;
+      } else {
+        const fallbackDate = new Date(now);
+        fallbackDate.setMonth(fallbackDate.getMonth() + (subscription?.billing_cycle === "yearly" ? 12 : 1));
+        nextPaymentDate = fallbackDate.toISOString();
+      }
+    }
+
+    // Regra PIRRIU: cancelamento bloqueia cobranças futuras, mas mantém o plano
+    // até a próxima data de cobrança já paga. Por isso a conta NÃO volta para Basic aqui.
     await supabaseAdmin
       .from("accounts")
-      .update({ subscription_status: "cancelled" })
+      .update({ subscription_status: "active" })
       .eq("id", profile.account_id);
 
     await supabaseAdmin
       .from("subscriptions")
       .update({
         status: "cancelled",
-        cancelled_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        cancelled_at: nowIso,
+        next_payment_date: nextPaymentDate,
+        updated_at: nowIso,
       })
       .eq("account_id", profile.account_id)
       .in("status", ["active", "authorized", "pending"]);
