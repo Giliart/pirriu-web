@@ -98,6 +98,10 @@ export function Header({
             </div>
 
             <nav className="pw-nav pw-nav-public" aria-label="Navegação principal">
+              <Link className="pw-nav-link" href="/suporte">
+                <UserRound size={16} />
+                <span>Suporte</span>
+              </Link>
               <Link className="pw-nav-link pw-nav-link--active" href="/login">
                 <Home size={16} />
                 <span>Login</span>

@@ -78,7 +78,14 @@ export default function HomePage() {
         </section>
       </main>
 
-      <footer className="pw-footer">PIRRIU © 2026 — Portal complementar do aplicativo.</footer>
+      <footer className="pw-footer">
+        PIRRIU © 2026 — Portal complementar do aplicativo.
+        <span className="pw-footer-links">
+          <a href="/privacidade">Privacidade</a>
+          <a href="/termos">Termos</a>
+          <a href="/suporte">Suporte</a>
+        </span>
+      </footer>
     </div>
   );
 }

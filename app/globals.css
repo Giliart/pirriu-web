@@ -2661,3 +2661,235 @@ color:#11233A;
     display: none;
   }
 }
+
+/* PIRRIU - páginas institucionais/legal/suporte */
+.pw-legal-main {
+  min-height: calc(100vh - 78px);
+  background:
+    radial-gradient(circle at 10% 10%, rgba(242,196,0,0.18), transparent 30%),
+    linear-gradient(135deg, #f5f8fc 0%, #eef4fb 100%);
+  padding: 56px 0 70px;
+}
+
+.pw-legal-hero {
+  background: linear-gradient(135deg, var(--pirriu-blue), var(--pirriu-blue-deep));
+  border-radius: 32px;
+  padding: 34px;
+  color: white;
+  box-shadow: var(--shadow-strong);
+  position: relative;
+  overflow: hidden;
+}
+
+.pw-legal-hero::after {
+  content: "";
+  position: absolute;
+  right: -70px;
+  bottom: -90px;
+  width: 240px;
+  height: 240px;
+  border-radius: 62px;
+  transform: rotate(42deg);
+  background: var(--pirriu-yellow);
+}
+
+.pw-legal-kicker {
+  color: var(--pirriu-yellow);
+  font-size: 13px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-weight: 950;
+  margin: 0 0 10px;
+}
+
+.pw-legal-title {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  font-size: clamp(34px, 6vw, 62px);
+  line-height: 0.98;
+  letter-spacing: -0.04em;
+  font-weight: 950;
+}
+
+.pw-legal-subtitle {
+  position: relative;
+  z-index: 1;
+  max-width: 760px;
+  margin: 16px 0 0;
+  color: rgba(255,255,255,0.86);
+  font-size: 18px;
+  line-height: 1.55;
+  font-weight: 800;
+}
+
+.pw-legal-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+  margin-top: 22px;
+}
+
+.pw-legal-card {
+  background: white;
+  border-radius: 28px;
+  padding: 28px;
+  box-shadow: var(--shadow);
+  border: 1px solid rgba(17,35,58,0.08);
+}
+
+.pw-legal-card h2 {
+  margin: 0 0 12px;
+  color: var(--pirriu-blue);
+  font-size: 25px;
+  letter-spacing: -0.02em;
+  font-weight: 950;
+}
+
+.pw-legal-card h3 {
+  margin: 20px 0 8px;
+  color: var(--pirriu-text);
+  font-size: 18px;
+  font-weight: 950;
+}
+
+.pw-legal-card p,
+.pw-legal-card li {
+  color: #4b5563;
+  font-size: 15px;
+  line-height: 1.72;
+  font-weight: 650;
+}
+
+.pw-legal-card ul {
+  margin: 10px 0 0;
+  padding-left: 20px;
+}
+
+.pw-legal-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(242,196,0,0.16);
+  color: var(--pirriu-blue);
+  border: 1px solid rgba(242,196,0,0.42);
+  border-radius: 999px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 950;
+  margin-top: 16px;
+}
+
+.pw-support-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.pw-support-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.pw-support-field label {
+  display: block;
+  color: var(--pirriu-blue);
+  font-size: 13px;
+  font-weight: 950;
+  margin-bottom: 7px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.pw-support-field input,
+.pw-support-field textarea {
+  width: 100%;
+  border: 1px solid #d7e0ea;
+  background: #f8fbff;
+  color: var(--pirriu-text);
+  border-radius: 17px;
+  padding: 14px 15px;
+  outline: none;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.pw-support-field textarea {
+  min-height: 150px;
+  resize: vertical;
+}
+
+.pw-support-field input:focus,
+.pw-support-field textarea:focus {
+  border-color: var(--pirriu-yellow);
+  box-shadow: 0 0 0 4px rgba(242,196,0,0.20);
+}
+
+.pw-support-button {
+  min-height: 54px;
+  border: 0;
+  border-radius: 18px;
+  background: var(--pirriu-yellow);
+  color: var(--pirriu-blue);
+  font-weight: 950;
+  font-size: 16px;
+  box-shadow: 0 14px 24px rgba(242,196,0,0.24);
+}
+
+.pw-support-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.pw-support-status {
+  border-radius: 16px;
+  padding: 13px 14px;
+  font-weight: 850;
+  font-size: 14px;
+}
+
+.pw-support-status.ok {
+  background: rgba(22,163,74,0.11);
+  color: #166534;
+}
+
+.pw-support-status.error {
+  background: rgba(220,38,38,0.10);
+  color: #991b1b;
+}
+
+.pw-footer-links {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-left: 10px;
+}
+
+.pw-footer-links a {
+  color: white;
+  opacity: 0.82;
+  font-weight: 850;
+}
+
+@media (max-width: 720px) {
+  .pw-legal-main {
+    padding: 28px 0 46px;
+  }
+
+  .pw-legal-hero,
+  .pw-legal-card {
+    border-radius: 24px;
+    padding: 22px;
+  }
+
+  .pw-support-row {
+    grid-template-columns: 1fr;
+  }
+
+  .pw-legal-subtitle {
+    font-size: 16px;
+  }
+}
