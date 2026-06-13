@@ -14,6 +14,40 @@ export function initialsFromName(name?: string | null) {
   return `${parts[0]?.[0] || "U"}${parts[1]?.[0] || ""}`.toUpperCase();
 }
 
+export function getSubscriptionStatusLabel(status?: string | null) {
+  const normalized = String(status || "").toLowerCase();
+
+  switch (normalized) {
+    case "active":
+    case "authorized":
+      return "Ativa";
+    case "pending":
+      return "Aguardando pagamento";
+    case "cancelled":
+    case "canceled":
+      return "Cancelada";
+    case "expired":
+      return "Expirada";
+    case "paused":
+      return "Pausada";
+    case "overdue":
+      return "Em atraso";
+    case "failed":
+      return "Falhou";
+    case "trial":
+      return "Teste";
+    case "inactive":
+      return "Inativa";
+    default:
+      return "Sem assinatura";
+  }
+}
+
+export function isSubscriptionActiveForAccess(status?: string | null) {
+  const normalized = String(status || "").toLowerCase();
+  return ["active", "authorized", "trial"].includes(normalized);
+}
+
 
 function isPastDate(value?: string | null) {
   if (!value) return false;
@@ -79,20 +113,14 @@ async function reconcileAccountSubscription(account: any) {
     return { account, latestSubscription, basicPlan };
   }
 
-  // Sem assinatura válida: volta para Basic.
+  // IMPORTANTE:
+  // Sem assinatura válida NÃO derruba mais o plano da conta.
+  // A fonte de verdade do plano exibido/liberado é accounts.plan_id + accounts.subscription_status.
+  // Isso permite liberação manual por Pix/suporte sem o portal voltar automaticamente para Basic.
+  //
+  // A tabela subscriptions fica como histórico/controle de recorrência.
+  // Somente o webhook/cancelamento explícito deve alterar accounts.plan_id.
   basicPlan = await getBasicPlan();
-
-  if (basicPlan?.id && (account.plan_id !== basicPlan.id || account.subscription_status !== "cancelled")) {
-    await supabaseAdmin
-      .from("accounts")
-      .update({
-        plan_id: basicPlan.id,
-        subscription_status: "cancelled",
-      })
-      .eq("id", account.id);
-
-    account = { ...account, plan_id: basicPlan.id, subscription_status: "cancelled" };
-  }
 
   return { account, latestSubscription, basicPlan };
 }

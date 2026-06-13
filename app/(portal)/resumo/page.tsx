@@ -3,7 +3,7 @@ import { Activity, BadgeCheck, CreditCard, MapPinned, ReceiptText, ShieldCheck, 
 import { Header } from "@/components/Header";
 import { createClient } from "@/lib/supabase-server";
 import { moneyBRL } from "@/lib/format";
-import { getPortalOverview } from "@/lib/portal-data";
+import { getPortalOverview, getSubscriptionStatusLabel } from "@/lib/portal-data";
 
 function statusLabel(status?: string | null) {
   const value = String(status || "active").toLowerCase();

@@ -3,7 +3,7 @@ import { CheckCircle2, CreditCard, ShieldCheck, XCircle } from "lucide-react";
 import { Header } from "@/components/Header";
 import { createClient } from "@/lib/supabase-server";
 import { moneyBRL } from "@/lib/format";
-import { getPortalOverview } from "@/lib/portal-data";
+import { getPortalOverview, getSubscriptionStatusLabel } from "@/lib/portal-data";
 
 type PlanRow = {
   id: string;
@@ -153,7 +153,7 @@ export default async function AssinaturaPage() {
                 <ShieldCheck size={34} />
               </div>
               <span>Status da assinatura</span>
-              <strong>{account?.subscription_status || "active"}</strong>
+              <strong>{getSubscriptionStatusLabel(account?.subscription_status) || "active"}</strong>
               <small>Conta {account?.account_code || "-"}</small>
             </div>
           </section>

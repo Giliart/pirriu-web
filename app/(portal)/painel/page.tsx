@@ -4,7 +4,7 @@ import { Bell, ChevronRight, CreditCard, MapPinned, ReceiptText, ShieldCheck, Tr
 import { Header } from "@/components/Header";
 import { createClient } from "@/lib/supabase-server";
 import { moneyBRL } from "@/lib/format";
-import { getPortalOverview, initialsFromName } from "@/lib/portal-data";
+import { getPortalOverview, initialsFromName, getSubscriptionStatusLabel } from "@/lib/portal-data";
 
 function statusLabel(status?: string | null) {
   const value = String(status || "active").toLowerCase();
