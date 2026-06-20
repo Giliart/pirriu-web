@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { syncAccountEntitlement } from "@/lib/subscription-entitlement";
 
 export async function POST() {
   try {
@@ -69,13 +70,6 @@ export async function POST() {
       }
     }
 
-    // Regra PIRRIU: cancelamento bloqueia cobranças futuras, mas mantém o plano
-    // até a próxima data de cobrança já paga. Por isso a conta NÃO volta para Basic aqui.
-    await supabaseAdmin
-      .from("accounts")
-      .update({ subscription_status: "active" })
-      .eq("id", profile.account_id);
-
     await supabaseAdmin
       .from("subscriptions")
       .update({
@@ -86,6 +80,11 @@ export async function POST() {
       })
       .eq("account_id", profile.account_id)
       .in("status", ["active", "authorized", "pending"]);
+
+    // Regra PIRRIU: cancelamento bloqueia cobranças futuras, mas mantém o plano
+    // até a próxima data de cobrança já paga. A sincronização abaixo escolhe a
+    // melhor assinatura vigente e grava o estado correto em accounts.
+    await syncAccountEntitlement(profile.account_id);
 
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://pirriu.app";
     return NextResponse.redirect(`${siteUrl}/assinatura?cancelled=true`);

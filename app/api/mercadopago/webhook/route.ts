@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { syncAccountEntitlement } from "@/lib/subscription-entitlement";
 
 function getResourceId(body: any, url: URL) {
   return (
@@ -97,21 +98,6 @@ function calculateNextPaymentDate(billingCycle?: string | null) {
   return date.toISOString();
 }
 
-async function activateAccountPlan(accountId: string, planId: string, status: string) {
-  // Só promovemos/liberamos o plano quando houver pagamento/assinatura ativa.
-  // Tentativas recusadas, canceladas ou expiradas NÃO devem rebaixar a conta aqui,
-  // porque o usuário pode ter outra assinatura paga válida ou estar no período já pago.
-  if (status !== "active") return;
-
-  await supabaseAdmin
-    .from("accounts")
-    .update({
-      plan_id: planId,
-      subscription_status: "active",
-    })
-    .eq("id", accountId);
-}
-
 async function applyPayment(paymentId: string) {
   const payment = await fetchMercadoPagoPayment(paymentId);
   const externalReference = payment?.external_reference || payment?.metadata?.external_reference || null;
@@ -171,8 +157,8 @@ async function applyPayment(paymentId: string) {
   const accountId = subscription?.account_id || order?.account_id;
   const planId = subscription?.plan_id || order?.plan_id;
 
-  if (accountId && planId) {
-    await activateAccountPlan(accountId, planId, status);
+  if (accountId) {
+    await syncAccountEntitlement(accountId);
   }
 
   return {
@@ -183,7 +169,7 @@ async function applyPayment(paymentId: string) {
     external_reference: externalReference,
     order_status: orderStatus,
     subscription_status: status,
-    account_updated: Boolean(accountId && planId),
+    account_updated: Boolean(accountId),
   };
 }
 
@@ -245,8 +231,8 @@ async function applyPreapproval(preapprovalId: string) {
       .eq("id", externalReference);
   }
 
-  if (subscription?.account_id && subscription?.plan_id) {
-    await activateAccountPlan(subscription.account_id, subscription.plan_id, status);
+  if (subscription?.account_id) {
+    await syncAccountEntitlement(subscription.account_id);
   }
 
   return {
@@ -255,7 +241,7 @@ async function applyPreapproval(preapprovalId: string) {
     preapproval_id: preapproval.id,
     external_reference: externalReference,
     subscription_status: status,
-    account_updated: Boolean(subscription?.account_id && subscription?.plan_id),
+    account_updated: Boolean(subscription?.account_id),
   };
 }
 

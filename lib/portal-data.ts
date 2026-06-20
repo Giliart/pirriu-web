@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { accountStatusFromEntitlement, getBestEntitlement } from "@/lib/subscription-entitlement";
 
 export function safeAvatarUrl(url?: string | null) {
   if (!url) return null;
@@ -79,24 +80,12 @@ async function reconcileAccountSubscription(account: any) {
     .limit(20);
 
   const rows = subscriptions || [];
-
-  // Assinatura que dá direito ao plano: ativa/autorizada, ou cancelada mas ainda dentro do período pago.
-  // Tentativas recusadas/canceladas sem started_at não devem derrubar uma assinatura válida anterior.
-  const entitlementSubscription =
-    rows.find((item: any) => ["active", "authorized"].includes(String(item.status || "").toLowerCase())) ||
-    rows.find((item: any) => {
-      const status = String(item.status || "").toLowerCase();
-      return ["cancelled", "canceled"].includes(status) && !!item.started_at && !!item.next_payment_date && !isPastDate(item.next_payment_date);
-    }) ||
-    null;
-
-  let latestSubscription = entitlementSubscription || rows[0] || null;
+  const entitlementSubscription = await getBestEntitlement(account.id);
+  const latestSubscription = entitlementSubscription || rows[0] || null;
   let basicPlan: any = null;
 
   if (entitlementSubscription?.plan_id) {
-    const desiredStatus = ["cancelled", "canceled"].includes(String(entitlementSubscription.status || "").toLowerCase())
-      ? "active"
-      : String(entitlementSubscription.status || "active").toLowerCase();
+    const desiredStatus = accountStatusFromEntitlement(entitlementSubscription) || "active";
 
     if (account.plan_id !== entitlementSubscription.plan_id || account.subscription_status !== desiredStatus) {
       await supabaseAdmin
@@ -113,13 +102,9 @@ async function reconcileAccountSubscription(account: any) {
     return { account, latestSubscription, basicPlan };
   }
 
-  // IMPORTANTE:
   // Sem assinatura válida NÃO derruba mais o plano da conta.
-  // A fonte de verdade do plano exibido/liberado é accounts.plan_id + accounts.subscription_status.
-  // Isso permite liberação manual por Pix/suporte sem o portal voltar automaticamente para Basic.
-  //
-  // A tabela subscriptions fica como histórico/controle de recorrência.
-  // Somente o webhook/cancelamento explícito deve alterar accounts.plan_id.
+  // A fonte de verdade operacional continua sendo accounts.plan_id + accounts.subscription_status,
+  // preservando liberações manuais por Pix/suporte.
   basicPlan = await getBasicPlan();
 
   return { account, latestSubscription, basicPlan };
