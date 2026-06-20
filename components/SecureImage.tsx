@@ -1,8 +1,12 @@
 "use client";
 
-import type { ImgHTMLAttributes } from "react";
+import type { CSSProperties, ImgHTMLAttributes } from "react";
 
 type SecureImageProps = ImgHTMLAttributes<HTMLImageElement>;
+
+type SecureImageStyle = CSSProperties & {
+  WebkitUserDrag?: "none";
+};
 
 export function SecureImage(props: SecureImageProps) {
   return (
@@ -15,7 +19,7 @@ export function SecureImage(props: SecureImageProps) {
         WebkitUserDrag: "none",
         userSelect: "none",
         ...(props.style || {}),
-      }}
+      } as SecureImageStyle}
     />
   );
 }
