@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 type Coordinate = [number, number];
 
@@ -15,6 +16,7 @@ const ORS_API_KEY =
 const ORS_URL = "https://api.openrouteservice.org/v2/directions/driving-car/geojson";
 const MAX_POINTS = 120;
 const CACHE_MAX_AGE_DAYS = 30;
+const ORS_TIMEOUT_MS = 22000;
 
 function normalizeCoordinate(point: unknown): Coordinate | null {
   if (!Array.isArray(point) || point.length < 2) return null;
@@ -25,31 +27,26 @@ function normalizeCoordinate(point: unknown): Coordinate | null {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
   if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
 
-  return [
-    Number(lng.toFixed(6)),
-    Number(lat.toFixed(6)),
-  ];
+  return [Number(lng.toFixed(6)), Number(lat.toFixed(6))];
 }
 
 function normalizeCoordinates(value: unknown): Coordinate[] {
   if (!Array.isArray(value)) return [];
-
-  return value
-    .map(normalizeCoordinate)
-    .filter(Boolean) as Coordinate[];
+  return value.map(normalizeCoordinate).filter(Boolean) as Coordinate[];
 }
 
 function buildRouteHash(coordinates: Coordinate[], instructions: boolean) {
   return crypto
     .createHash("sha256")
-    .update(JSON.stringify({ coordinates, instructions, provider: "openrouteservice-driving-car-v1" }))
+    .update(JSON.stringify({ coordinates, instructions, provider: "openrouteservice-driving-car-v2" }))
     .digest("hex");
 }
 
-function buildDirectGeometry(coordinates: Coordinate[]) {
+function buildDirectGeometry(coordinates: Coordinate[], reason = "fallback") {
   return {
     ok: true,
     source: "fallback",
+    reason,
     coordinates,
     summary: {
       distance: 0,
@@ -57,6 +54,15 @@ function buildDirectGeometry(coordinates: Coordinate[]) {
     },
     steps: [],
   };
+}
+
+function getOrsErrorMessage(data: any, status: number) {
+  return (
+    data?.error?.message ||
+    data?.error ||
+    data?.message ||
+    `OpenRouteService respondeu com status ${status}`
+  );
 }
 
 async function getCachedRoute(routeHash: string) {
@@ -113,6 +119,69 @@ async function saveCachedRoute(params: {
     .then(() => null);
 }
 
+async function callOpenRouteService(coordinates: Coordinate[], instructions: boolean) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ORS_TIMEOUT_MS);
+
+  try {
+    const orsResponse = await fetch(ORS_URL, {
+      method: "POST",
+      headers: {
+        Accept: "application/json, application/geo+json",
+        Authorization: ORS_API_KEY,
+        "Content-Type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify({
+        coordinates,
+        instructions,
+        language: "pt",
+        units: "m",
+        geometry_simplify: false,
+      }),
+      signal: controller.signal,
+      cache: "no-store",
+    });
+
+    const data = await orsResponse.json().catch(() => null);
+
+    if (!orsResponse.ok) {
+      return {
+        ok: false,
+        status: orsResponse.status,
+        error: getOrsErrorMessage(data, orsResponse.status),
+      };
+    }
+
+    const feature = data?.features?.[0];
+    const geometryCoords = Array.isArray(feature?.geometry?.coordinates)
+      ? feature.geometry.coordinates.map(normalizeCoordinate).filter(Boolean)
+      : [];
+
+    return {
+      ok: true,
+      geometry: geometryCoords.length ? geometryCoords : coordinates,
+      summary: feature?.properties?.summary || {},
+      steps: feature?.properties?.segments?.flatMap((segment: any) => segment?.steps || []) || [],
+    };
+  } catch (error: any) {
+    return {
+      ok: false,
+      status: 0,
+      error: error?.name === "AbortError" ? "Tempo esgotado ao consultar OpenRouteService." : error?.message || "Erro desconhecido na rota.",
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function GET() {
+  return NextResponse.json({
+    ok: true,
+    service: "pirriu-routes",
+    orsConfigured: Boolean(ORS_API_KEY),
+  });
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
@@ -139,47 +208,24 @@ export async function POST(request: NextRequest) {
     if (cached) return NextResponse.json(cached);
 
     if (!ORS_API_KEY) {
-      return NextResponse.json(buildDirectGeometry(coordinates));
+      return NextResponse.json(buildDirectGeometry(coordinates, "OPENROUTE_SERVICE_API_KEY ausente na Vercel"));
     }
 
-    const orsResponse = await fetch(ORS_URL, {
-      method: "POST",
-      headers: {
-        Accept: "application/json, application/geo+json",
-        Authorization: ORS_API_KEY,
-        "Content-Type": "application/json; charset=utf-8",
-      },
-      body: JSON.stringify({
-        coordinates,
-        instructions,
-        language: "pt",
-        units: "m",
-      }),
-      cache: "no-store",
-    });
+    const orsResult = await callOpenRouteService(coordinates, instructions);
 
-    const data = await orsResponse.json().catch(() => null);
-
-    if (!orsResponse.ok) {
-      return NextResponse.json(buildDirectGeometry(coordinates));
+    if (!orsResult.ok) {
+      return NextResponse.json({
+        ...buildDirectGeometry(coordinates, orsResult.error || "Falha na OpenRouteService"),
+        orsStatus: orsResult.status,
+      });
     }
-
-    const feature = data?.features?.[0];
-    const geometryCoords = Array.isArray(feature?.geometry?.coordinates)
-      ? feature.geometry.coordinates.map(normalizeCoordinate).filter(Boolean)
-      : [];
-
-    const summary = feature?.properties?.summary || {};
-    const steps = feature?.properties?.segments?.[0]?.steps || [];
-
-    const finalGeometry = geometryCoords.length ? geometryCoords : coordinates;
 
     await saveCachedRoute({
       routeHash,
       coordinates,
-      geometry: finalGeometry,
-      summary,
-      steps,
+      geometry: orsResult.geometry,
+      summary: orsResult.summary,
+      steps: orsResult.steps,
       provider: "openrouteservice",
       context,
     });
@@ -187,9 +233,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       source: "openrouteservice",
-      coordinates: finalGeometry,
-      summary,
-      steps,
+      coordinates: orsResult.geometry,
+      summary: orsResult.summary,
+      steps: orsResult.steps,
     });
   } catch (error: any) {
     return NextResponse.json(
