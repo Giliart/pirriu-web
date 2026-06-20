@@ -2,6 +2,7 @@ import { Bell, CreditCard, ReceiptText, ShieldCheck, Users } from "lucide-react"
 import { Header } from "@/components/Header";
 import { Logo } from "@/components/Logo";
 import { StoreBadge } from "@/components/StoreBadge";
+import { SecureImage } from "@/components/SecureImage";
 
 export default function HomePage() {
   return (
@@ -43,7 +44,7 @@ export default function HomePage() {
                 <div className="pw-notch" />
                 <div className="pw-phone-screen">
                   <div className="pw-phone-top">
-                    <img src="/login-hero.png" alt="Logo PIRRIU" className="pw-phone-logo" />
+                    <SecureImage src="/login-hero.png" alt="Logo PIRRIU" className="pw-phone-logo" />
                     <Bell />
                   </div>
 

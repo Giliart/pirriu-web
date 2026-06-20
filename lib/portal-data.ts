@@ -171,7 +171,7 @@ export async function getPortalOverview(userId: string) {
     account,
     latestSubscription,
     plan: finalPlan,
-    avatarUrl: safeAvatarUrl(profile?.avatar_url),
+    avatarUrl: profile?.id ? `/api/avatar/${profile.id}` : null,
     stats: {
       activeClients: activeClientsRes.count || 0,
       lateClients: lateClientsRes.count || 0,

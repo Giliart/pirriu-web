@@ -5,9 +5,10 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { CreditCard, Home, LayoutDashboard, Menu, UserRound, X } from "lucide-react";
 import { Logo } from "./Logo";
+import { SecureImage } from "./SecureImage";
 
 function isPublicAvatar(url?: string | null) {
-  return Boolean(url && /^https?:\/\//i.test(url));
+  return Boolean(url && (/^https?:\/\//i.test(url) || url.startsWith('/api/avatar/')));
 }
 
 function getFirstName(name?: string | null) {
@@ -43,7 +44,7 @@ export function Header({
           <>
             <div className="pw-mobile-user-head pw-header-user">
               {safeAvatar ? (
-                <img src={safeAvatar} alt="Foto de perfil" className="pw-mobile-user-avatar" />
+                <SecureImage src={safeAvatar} alt="Foto de perfil" className="pw-mobile-user-avatar" />
               ) : (
                 <div className="pw-mobile-user-avatar pw-mobile-user-avatar--fallback">{firstName[0]}</div>
               )}
@@ -80,7 +81,7 @@ export function Header({
                 );
               })}
               {safeAvatar ? (
-                <img src={safeAvatar} alt="Foto de perfil" width={46} height={46} className="pw-avatar" />
+                <SecureImage src={safeAvatar} alt="Foto de perfil" width={46} height={46} className="pw-avatar" />
               ) : (
                 <div className="pw-avatar" />
               )}

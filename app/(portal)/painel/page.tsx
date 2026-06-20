@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Bell, ChevronRight, CreditCard, MapPinned, ReceiptText, ShieldCheck, TrendingUp, Users } from "lucide-react";
 import { Header } from "@/components/Header";
+import { SecureImage } from "@/components/SecureImage";
 import { createClient } from "@/lib/supabase-server";
 import { moneyBRL } from "@/lib/format";
 import { getPortalOverview, initialsFromName, getSubscriptionStatusLabel } from "@/lib/portal-data";
@@ -42,7 +43,7 @@ export default async function PainelPage() {
           <section className="pw-dashboard-hero">
             <div className="pw-profile-line">
               {avatarUrl ? (
-                <img src={avatarUrl} className="pw-profile-avatar" alt="Foto de perfil" />
+                <SecureImage src={avatarUrl} className="pw-profile-avatar" alt="Foto de perfil" />
               ) : (
                 <div className="pw-profile-avatar pw-profile-avatar--fallback">{initialsFromName(profile?.full_name)}</div>
               )}
