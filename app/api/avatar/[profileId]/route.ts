@@ -10,7 +10,7 @@ function isSafeHttpUrl(value?: string | null) {
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { profileId: string } }
+  context: { params: Promise<{ profileId: string }> }
 ) {
   const supabase = await createClient();
   const { data: auth } = await supabase.auth.getUser();
@@ -19,7 +19,8 @@ export async function GET(
     return new NextResponse("Unauthorized", { status: 401 });
   }
 
-  const requestedProfileId = params.profileId;
+  const { profileId } = await context.params;
+  const requestedProfileId = profileId;
 
   const { data: viewer } = await supabaseAdmin
     .from("profiles")
