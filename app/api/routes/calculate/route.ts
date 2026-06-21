@@ -296,14 +296,14 @@ export async function POST(request: NextRequest) {
         routeHash,
         coordinates,
         geometry: fallbackGeometry,
-        summary: { ...fallbackSummary, error: orsResult.error || "Falha na OpenRouteService" },
+        summary: { ...fallbackSummary, error: (orsResult as any).error || "Falha na OpenRouteService" },
         steps: [],
         provider: "fallback",
         context,
       });
 
       return NextResponse.json({
-        ...buildDirectGeometry(coordinates, orsResult.error || "Falha na OpenRouteService"),
+        ...buildDirectGeometry(coordinates, (orsResult as any).error || "Falha na OpenRouteService"),
         orsStatus: orsResult.status,
       });
     }
