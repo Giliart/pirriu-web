@@ -35,6 +35,22 @@ function normalizeCoordinates(value: unknown): Coordinate[] {
   return value.map(normalizeCoordinate).filter(Boolean) as Coordinate[];
 }
 
+function normalizePoints(value: unknown): Coordinate[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((point: any) => {
+      const latitude = Number(point?.latitude ?? point?.lat);
+      const longitude = Number(point?.longitude ?? point?.lng ?? point?.lon);
+
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+      if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
+
+      return [Number(longitude.toFixed(6)), Number(latitude.toFixed(6))] as Coordinate;
+    })
+    .filter(Boolean) as Coordinate[];
+}
+
 function buildRouteHash(coordinates: Coordinate[], instructions: boolean) {
   return crypto
     .createHash("sha256")
@@ -185,7 +201,9 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
-    const coordinates = normalizeCoordinates(body?.coordinates);
+    const coordinates = normalizeCoordinates(body?.coordinates).length
+      ? normalizeCoordinates(body?.coordinates)
+      : normalizePoints(body?.points);
     const instructions = Boolean(body?.instructions);
     const context = String(body?.context || "mobile").slice(0, 80);
 
