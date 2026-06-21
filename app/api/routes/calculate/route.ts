@@ -16,7 +16,8 @@ const ORS_API_KEY =
 const ORS_URL = "https://api.openrouteservice.org/v2/directions/driving-car/geojson";
 const MAX_POINTS = 120;
 const CACHE_MAX_AGE_DAYS = 30;
-const ORS_TIMEOUT_MS = 22000;
+const ORS_TIMEOUT_MS = 45000;
+const ORS_MAX_WAYPOINTS_PER_REQUEST = 6;
 
 function normalizeCoordinate(point: unknown): Coordinate | null {
   if (!Array.isArray(point) || point.length < 2) return null;
@@ -190,6 +191,62 @@ async function callOpenRouteService(coordinates: Coordinate[], instructions: boo
   }
 }
 
+function buildFallbackSummary(coordinates: Coordinate[]) {
+  return {
+    distance: 0,
+    duration: 0,
+    approximate: true,
+  };
+}
+
+async function callOpenRouteServiceStable(coordinates: Coordinate[], instructions: boolean) {
+  if (coordinates.length <= ORS_MAX_WAYPOINTS_PER_REQUEST) {
+    return callOpenRouteService(coordinates, instructions);
+  }
+
+  const geometry: Coordinate[] = [];
+  let totalDistance = 0;
+  let totalDuration = 0;
+  const steps: any[] = [];
+  const errors: string[] = [];
+
+  let startIndex = 0;
+  while (startIndex < coordinates.length - 1) {
+    const endIndex = Math.min(startIndex + ORS_MAX_WAYPOINTS_PER_REQUEST - 1, coordinates.length - 1);
+    const chunk = coordinates.slice(startIndex, endIndex + 1);
+    const result = await callOpenRouteService(chunk, instructions);
+
+    if (result.ok) {
+      const chunkGeometry = result.geometry?.length ? result.geometry : chunk;
+      if (geometry.length === 0) geometry.push(...chunkGeometry);
+      else geometry.push(...chunkGeometry.slice(1));
+
+      totalDistance += Number(result.summary?.distance || 0);
+      totalDuration += Number(result.summary?.duration || 0);
+      if (Array.isArray(result.steps)) steps.push(...result.steps);
+    } else {
+      errors.push(String(result.error || `Erro ORS ${result.status || ''}`));
+      if (geometry.length === 0) geometry.push(...chunk);
+      else geometry.push(...chunk.slice(1));
+    }
+
+    startIndex = endIndex;
+  }
+
+  return {
+    ok: true,
+    geometry: geometry.length ? geometry : coordinates,
+    summary: {
+      distance: totalDistance,
+      duration: totalDuration,
+      partial: errors.length > 0,
+      errors: errors.slice(0, 5),
+    },
+    steps,
+    partial: errors.length > 0,
+  };
+}
+
 export async function GET() {
   return NextResponse.json({
     ok: true,
@@ -229,14 +286,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(buildDirectGeometry(coordinates, "OPENROUTE_SERVICE_API_KEY ausente na Vercel"));
     }
 
-    const orsResult = await callOpenRouteService(coordinates, instructions);
+    const orsResult = await callOpenRouteServiceStable(coordinates, instructions);
 
     if (!orsResult.ok) {
+      const fallbackGeometry = coordinates;
+      const fallbackSummary = buildFallbackSummary(coordinates);
+
+      await saveCachedRoute({
+        routeHash,
+        coordinates,
+        geometry: fallbackGeometry,
+        summary: { ...fallbackSummary, error: orsResult.error || "Falha na OpenRouteService" },
+        steps: [],
+        provider: "fallback",
+        context,
+      });
+
       return NextResponse.json({
         ...buildDirectGeometry(coordinates, orsResult.error || "Falha na OpenRouteService"),
         orsStatus: orsResult.status,
       });
     }
+
+    const provider = orsResult.partial ? "openrouteservice_partial" : "openrouteservice";
 
     await saveCachedRoute({
       routeHash,
@@ -244,13 +316,13 @@ export async function POST(request: NextRequest) {
       geometry: orsResult.geometry,
       summary: orsResult.summary,
       steps: orsResult.steps,
-      provider: "openrouteservice",
+      provider,
       context,
     });
 
     return NextResponse.json({
       ok: true,
-      source: "openrouteservice",
+      source: provider,
       coordinates: orsResult.geometry,
       summary: orsResult.summary,
       steps: orsResult.steps,
