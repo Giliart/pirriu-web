@@ -308,7 +308,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const provider = orsResult.partial ? "openrouteservice_partial" : "openrouteservice";
+    const provider = (orsResult as any).partial ? "openrouteservice_partial" : "openrouteservice";
 
     await saveCachedRoute({
       routeHash,
