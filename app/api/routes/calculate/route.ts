@@ -6,6 +6,19 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type Coordinate = [number, number];
+type OrsSuccess = {
+  ok: true;
+  geometry: Coordinate[];
+  summary: Record<string, any>;
+  steps: any[];
+  partial?: boolean;
+};
+type OrsFailure = {
+  ok: false;
+  status: number;
+  error: string;
+};
+type OrsResult = OrsSuccess | OrsFailure;
 
 const ORS_API_KEY =
   process.env.OPENROUTE_SERVICE_API_KEY ||
@@ -15,9 +28,9 @@ const ORS_API_KEY =
 
 const ORS_URL = "https://api.openrouteservice.org/v2/directions/driving-car/geojson";
 const MAX_POINTS = 120;
+const ORS_MAX_POINTS_PER_REQUEST = 10;
 const CACHE_MAX_AGE_DAYS = 30;
-const ORS_TIMEOUT_MS = 45000;
-const ORS_MAX_WAYPOINTS_PER_REQUEST = 6;
+const ORS_TIMEOUT_MS = 28000;
 
 function normalizeCoordinate(point: unknown): Coordinate | null {
   if (!Array.isArray(point) || point.length < 2) return null;
@@ -55,7 +68,7 @@ function normalizePoints(value: unknown): Coordinate[] {
 function buildRouteHash(coordinates: Coordinate[], instructions: boolean) {
   return crypto
     .createHash("sha256")
-    .update(JSON.stringify({ coordinates, instructions, provider: "openrouteservice-driving-car-v2" }))
+    .update(JSON.stringify({ coordinates, instructions, provider: "openrouteservice-driving-car-v3" }))
     .digest("hex");
 }
 
@@ -68,6 +81,8 @@ function buildDirectGeometry(coordinates: Coordinate[], reason = "fallback") {
     summary: {
       distance: 0,
       duration: 0,
+      partial: true,
+      errors: [reason],
     },
     steps: [],
   };
@@ -117,26 +132,60 @@ async function saveCachedRoute(params: {
 }) {
   const expiresAt = new Date(Date.now() + CACHE_MAX_AGE_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
-  await supabaseAdmin
-    .from("route_cache")
-    .upsert(
-      {
-        route_hash: params.routeHash,
-        input_coordinates: params.coordinates,
-        geometry_json: params.geometry,
-        summary_json: params.summary || {},
-        steps_json: params.steps || [],
-        provider: params.provider,
-        context: params.context,
-        last_used_at: new Date().toISOString(),
-        expires_at: expiresAt,
-      },
-      { onConflict: "route_hash" }
-    )
-    .then(() => null);
+  const { error } = await supabaseAdmin.from("route_cache").upsert(
+    {
+      route_hash: params.routeHash,
+      input_coordinates: params.coordinates,
+      geometry_json: params.geometry,
+      summary_json: params.summary || {},
+      steps_json: params.steps || [],
+      provider: params.provider,
+      context: params.context,
+      last_used_at: new Date().toISOString(),
+      expires_at: expiresAt,
+    },
+    { onConflict: "route_hash" }
+  );
+
+  if (error) {
+    console.warn("PIRRIU route_cache save failed:", error.message);
+  }
 }
 
-async function callOpenRouteService(coordinates: Coordinate[], instructions: boolean) {
+function mergeGeometry(current: Coordinate[], next: Coordinate[]) {
+  if (!current.length) return next;
+  if (!next.length) return current;
+
+  const last = current[current.length - 1];
+  const first = next[0];
+
+  if (last && first && last[0] === first[0] && last[1] === first[1]) {
+    return [...current, ...next.slice(1)];
+  }
+
+  return [...current, ...next];
+}
+
+function splitIntoOverlappingChunks(coordinates: Coordinate[]) {
+  if (coordinates.length <= ORS_MAX_POINTS_PER_REQUEST) return [coordinates];
+
+  const chunks: Coordinate[][] = [];
+  let start = 0;
+
+  while (start < coordinates.length - 1) {
+    const end = Math.min(start + ORS_MAX_POINTS_PER_REQUEST, coordinates.length);
+    const chunk = coordinates.slice(start, end);
+
+    if (chunk.length >= 2) chunks.push(chunk);
+    if (end >= coordinates.length) break;
+
+    start = end - 1;
+  }
+
+  return chunks;
+}
+
+async function callOrsSingle(coordinates: Coordinate[], instructions: boolean): Promise<OrsResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ORS_TIMEOUT_MS);
 
@@ -191,56 +240,51 @@ async function callOpenRouteService(coordinates: Coordinate[], instructions: boo
   }
 }
 
-function buildFallbackSummary(coordinates: Coordinate[]) {
-  return {
-    distance: 0,
-    duration: 0,
-    approximate: true,
-  };
-}
+async function callOpenRouteService(coordinates: Coordinate[], instructions: boolean): Promise<OrsResult> {
+  const chunks = splitIntoOverlappingChunks(coordinates);
 
-async function callOpenRouteServiceStable(coordinates: Coordinate[], instructions: boolean) {
-  if (coordinates.length <= ORS_MAX_WAYPOINTS_PER_REQUEST) {
-    return callOpenRouteService(coordinates, instructions);
+  if (chunks.length === 1) {
+    return callOrsSingle(chunks[0], instructions);
   }
 
-  const geometry: Coordinate[] = [];
-  let totalDistance = 0;
-  let totalDuration = 0;
+  let geometry: Coordinate[] = [];
+  let distance = 0;
+  let duration = 0;
   const steps: any[] = [];
   const errors: string[] = [];
 
-  let startIndex = 0;
-  while (startIndex < coordinates.length - 1) {
-    const endIndex = Math.min(startIndex + ORS_MAX_WAYPOINTS_PER_REQUEST - 1, coordinates.length - 1);
-    const chunk = coordinates.slice(startIndex, endIndex + 1);
-    const result = await callOpenRouteService(chunk, instructions);
+  for (const chunk of chunks) {
+    const result = await callOrsSingle(chunk, instructions);
 
-    if (result.ok) {
-      const chunkGeometry = result.geometry?.length ? result.geometry : chunk;
-      if (geometry.length === 0) geometry.push(...chunkGeometry);
-      else geometry.push(...chunkGeometry.slice(1));
-
-      totalDistance += Number(result.summary?.distance || 0);
-      totalDuration += Number(result.summary?.duration || 0);
-      if (Array.isArray(result.steps)) steps.push(...result.steps);
-    } else {
-      errors.push(String(result.error || `Erro ORS ${result.status || ''}`));
-      if (geometry.length === 0) geometry.push(...chunk);
-      else geometry.push(...chunk.slice(1));
+    if (!result.ok) {
+      errors.push(result.error);
+      geometry = mergeGeometry(geometry, chunk);
+      continue;
     }
 
-    startIndex = endIndex;
+    geometry = mergeGeometry(geometry, result.geometry);
+    distance += Number(result.summary?.distance || 0);
+    duration += Number(result.summary?.duration || 0);
+    steps.push(...(result.steps || []));
+  }
+
+  if (!geometry.length) {
+    return {
+      ok: false,
+      status: 0,
+      error: errors.join(" | ") || "Falha ao calcular rota em blocos.",
+    };
   }
 
   return {
     ok: true,
-    geometry: geometry.length ? geometry : coordinates,
+    geometry,
     summary: {
-      distance: totalDistance,
-      duration: totalDuration,
+      distance,
+      duration,
       partial: errors.length > 0,
-      errors: errors.slice(0, 5),
+      errors,
+      chunks: chunks.length,
     },
     steps,
     partial: errors.length > 0,
@@ -252,15 +296,16 @@ export async function GET() {
     ok: true,
     service: "pirriu-routes",
     orsConfigured: Boolean(ORS_API_KEY),
+    maxPoints: MAX_POINTS,
+    chunkSize: ORS_MAX_POINTS_PER_REQUEST,
   });
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
-    const coordinates = normalizeCoordinates(body?.coordinates).length
-      ? normalizeCoordinates(body?.coordinates)
-      : normalizePoints(body?.points);
+    const fromCoordinates = normalizeCoordinates(body?.coordinates);
+    const coordinates = fromCoordinates.length ? fromCoordinates : normalizePoints(body?.points);
     const instructions = Boolean(body?.instructions);
     const context = String(body?.context || "mobile").slice(0, 80);
 
@@ -283,32 +328,41 @@ export async function POST(request: NextRequest) {
     if (cached) return NextResponse.json(cached);
 
     if (!ORS_API_KEY) {
-      return NextResponse.json(buildDirectGeometry(coordinates, "OPENROUTE_SERVICE_API_KEY ausente na Vercel"));
-    }
-
-    const orsResult = await callOpenRouteServiceStable(coordinates, instructions);
-
-    if (!orsResult.ok) {
-      const fallbackGeometry = coordinates;
-      const fallbackSummary = buildFallbackSummary(coordinates);
-
+      const fallback = buildDirectGeometry(coordinates, "OPENROUTE_SERVICE_API_KEY ausente na Vercel");
       await saveCachedRoute({
         routeHash,
         coordinates,
-        geometry: fallbackGeometry,
-        summary: { ...fallbackSummary, error: (orsResult as any).error || "Falha na OpenRouteService" },
+        geometry: fallback.coordinates,
+        summary: fallback.summary,
         steps: [],
-        provider: "fallback",
+        provider: "fallback_no_ors_key",
+        context,
+      });
+
+      return NextResponse.json(fallback);
+    }
+
+    const orsResult = await callOpenRouteService(coordinates, instructions);
+
+    if (!orsResult.ok) {
+      const fallback = buildDirectGeometry(coordinates, orsResult.error || "Falha na OpenRouteService");
+      await saveCachedRoute({
+        routeHash,
+        coordinates,
+        geometry: fallback.coordinates,
+        summary: fallback.summary,
+        steps: [],
+        provider: "fallback_ors_error",
         context,
       });
 
       return NextResponse.json({
-        ...buildDirectGeometry(coordinates, (orsResult as any).error || "Falha na OpenRouteService"),
-        orsStatus: (orsResult as any).status,
+        ...fallback,
+        orsStatus: orsResult.status,
       });
     }
 
-    const provider = (orsResult as any).partial ? "openrouteservice_partial" : "openrouteservice";
+    const provider = orsResult.partial ? "openrouteservice_partial" : "openrouteservice";
 
     await saveCachedRoute({
       routeHash,
