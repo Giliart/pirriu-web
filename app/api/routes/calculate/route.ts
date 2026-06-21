@@ -49,6 +49,20 @@ function normalizeCoordinates(value: unknown): Coordinate[] {
   return value.map(normalizeCoordinate).filter(Boolean) as Coordinate[];
 }
 
+function downsampleCoordinates(coords: Coordinate[], maxPoints = 1200): Coordinate[] {
+  if (coords.length <= maxPoints) return coords;
+  if (maxPoints < 2) return coords.slice(0, maxPoints);
+
+  const result: Coordinate[] = [];
+  const step = (coords.length - 1) / (maxPoints - 1);
+
+  for (let i = 0; i < maxPoints; i += 1) {
+    result.push(coords[Math.min(coords.length - 1, Math.round(i * step))]);
+  }
+
+  return result;
+}
+
 function normalizePoints(value: unknown): Coordinate[] {
   if (!Array.isArray(value)) return [];
 
@@ -202,7 +216,7 @@ async function callOrsSingle(coordinates: Coordinate[], instructions: boolean): 
         instructions,
         language: "pt",
         units: "m",
-        geometry_simplify: false,
+        geometry_simplify: true,
       }),
       signal: controller.signal,
       cache: "no-store",
@@ -225,7 +239,7 @@ async function callOrsSingle(coordinates: Coordinate[], instructions: boolean): 
 
     return {
       ok: true,
-      geometry: geometryCoords.length ? geometryCoords : coordinates,
+      geometry: downsampleCoordinates(geometryCoords.length ? geometryCoords : coordinates),
       summary: feature?.properties?.summary || {},
       steps: feature?.properties?.segments?.flatMap((segment: any) => segment?.steps || []) || [],
     };
@@ -278,7 +292,7 @@ async function callOpenRouteService(coordinates: Coordinate[], instructions: boo
 
   return {
     ok: true,
-    geometry,
+    geometry: downsampleCoordinates(geometry),
     summary: {
       distance,
       duration,
@@ -362,7 +376,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const provider = orsResult.partial ? "openrouteservice_partial" : "openrouteservice";
+    const provider = orsResult.ok && orsResult.partial ? "openrouteservice_partial" : "openrouteservice";
 
     await saveCachedRoute({
       routeHash,
@@ -377,7 +391,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       source: provider,
-      coordinates: orsResult.geometry,
+      coordinates: downsampleCoordinates(orsResult.geometry),
       summary: orsResult.summary,
       steps: orsResult.steps,
     });
