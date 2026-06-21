@@ -304,7 +304,7 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         ...buildDirectGeometry(coordinates, (orsResult as any).error || "Falha na OpenRouteService"),
-        orsStatus: orsResult.status,
+        orsStatus: (orsResult as any).status,
       });
     }
 
