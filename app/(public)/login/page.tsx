@@ -61,7 +61,7 @@ export default function LoginPage() {
     }
 
     const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || window.location.origin).replace(/\/$/, "");
-    const redirectTo = `${siteUrl}/api/auth/callback?next=/nova-senha`;
+    const redirectTo = `${siteUrl}/nova-senha`;
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo,
