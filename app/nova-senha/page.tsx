@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, LockKeyhole, ShieldCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase-browser";
@@ -16,7 +16,7 @@ function translateError(message?: string) {
 
 export default function NovaSenhaPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -24,10 +24,34 @@ export default function NovaSenhaPage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [success, setSuccess] = useState(false);
+  const [sessionReady, setSessionReady] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (!mounted) return;
+      if (error || !data.session) {
+        setMessage("Seu link de redefinição é inválido ou expirou. Solicite um novo link.");
+        setSessionReady(false);
+        return;
+      }
+      setSessionReady(true);
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, [supabase]);
 
   async function updatePassword() {
     setSuccess(false);
     setMessage("");
+
+    if (!sessionReady) {
+      setMessage("Seu link de redefinição é inválido ou expirou. Solicite um novo link.");
+      return;
+    }
 
     if (password.length < 6) {
       setMessage("Digite uma senha com pelo menos 6 caracteres.");
@@ -101,7 +125,7 @@ export default function NovaSenhaPage() {
             </button>
           </label>
 
-          <button onClick={updatePassword} disabled={loading} className="pw-primary-btn" style={{ width: "100%", marginTop: 16 }}>
+          <button onClick={updatePassword} disabled={loading || !sessionReady} className="pw-primary-btn" style={{ width: "100%", marginTop: 16 }}>
             {loading ? "Salvando..." : "Salvar nova senha"}
           </button>
 
