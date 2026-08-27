@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, LockKeyhole, ShieldCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase-browser";
@@ -10,34 +10,42 @@ function translateError(message?: string) {
   const value = (message || "").toLowerCase();
   if (value.includes("same password")) return "A nova senha precisa ser diferente da senha atual.";
   if (value.includes("weak") || value.includes("short")) return "Use uma senha mais forte.";
-  if (value.includes("session") || value.includes("auth")) return "Seu link expirou. Solicite uma nova redefinição de senha.";
+  if (value.includes("session") || value.includes("auth") || value.includes("jwt")) {
+    return "Sua sessão de redefinição expirou. Solicite um novo link.";
+  }
   return "Não foi possível alterar a senha. Tente novamente.";
 }
 
 export default function NovaSenhaPage() {
   const router = useRouter();
-  const supabase = useMemo(() => createClient(), []);
+  const [supabase] = useState(() => createClient());
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [hasRecoverySession, setHasRecoverySession] = useState(false);
   const [message, setMessage] = useState("");
   const [success, setSuccess] = useState(false);
-  const [sessionReady, setSessionReady] = useState(false);
 
   useEffect(() => {
     let mounted = true;
 
-    supabase.auth.getSession().then(({ data, error }) => {
+    async function validateSession() {
+      const { data, error } = await supabase.auth.getSession();
       if (!mounted) return;
-      if (error || !data.session) {
-        setMessage("Seu link de redefinição é inválido ou expirou. Solicite um novo link.");
-        setSessionReady(false);
-        return;
+
+      const valid = Boolean(data.session && !error);
+      setHasRecoverySession(valid);
+      setCheckingSession(false);
+
+      if (!valid) {
+        setMessage("Seu link de redefinição é inválido, expirou ou já foi utilizado. Solicite um novo link.");
       }
-      setSessionReady(true);
-    });
+    }
+
+    validateSession();
 
     return () => {
       mounted = false;
@@ -48,8 +56,8 @@ export default function NovaSenhaPage() {
     setSuccess(false);
     setMessage("");
 
-    if (!sessionReady) {
-      setMessage("Seu link de redefinição é inválido ou expirou. Solicite um novo link.");
+    if (!hasRecoverySession) {
+      setMessage("Sua sessão de redefinição expirou. Solicite um novo link.");
       return;
     }
 
@@ -77,7 +85,9 @@ export default function NovaSenhaPage() {
     setSuccess(true);
     setMessage("Senha alterada com sucesso. Você já pode entrar com a nova senha.");
 
-    setTimeout(() => router.push("/login"), 1600);
+    // Encerra a sessão temporária de recuperação antes de voltar ao login.
+    await supabase.auth.signOut();
+    setTimeout(() => router.replace("/login"), 1200);
   }
 
   return (
@@ -105,6 +115,7 @@ export default function NovaSenhaPage() {
               className="pw-input pw-input--with-eye"
               placeholder="Nova senha"
               autoComplete="new-password"
+              disabled={checkingSession || !hasRecoverySession || success}
             />
             <button type="button" className="pw-eye-btn" onClick={() => setShowPassword(!showPassword)} aria-label="Mostrar ou ocultar nova senha">
               {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
@@ -119,23 +130,35 @@ export default function NovaSenhaPage() {
               className="pw-input pw-input--with-eye"
               placeholder="Confirmar nova senha"
               autoComplete="new-password"
+              disabled={checkingSession || !hasRecoverySession || success}
             />
             <button type="button" className="pw-eye-btn" onClick={() => setShowConfirmPassword(!showConfirmPassword)} aria-label="Mostrar ou ocultar confirmação de senha">
               {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
             </button>
           </label>
 
-          <button onClick={updatePassword} disabled={loading || !sessionReady} className="pw-primary-btn" style={{ width: "100%", marginTop: 16 }}>
-            {loading ? "Salvando..." : "Salvar nova senha"}
+          <button
+            onClick={updatePassword}
+            disabled={loading || checkingSession || !hasRecoverySession || success}
+            className="pw-primary-btn"
+            style={{ width: "100%", marginTop: 16 }}
+          >
+            {checkingSession ? "Validando link..." : loading ? "Salvando..." : "Salvar nova senha"}
           </button>
 
           {message && <p className={success ? "pw-message pw-message--success" : "pw-message"}>{message}</p>}
+
+          {!checkingSession && !hasRecoverySession && (
+            <button type="button" className="pw-link-button" onClick={() => router.replace("/login")}>
+              Solicitar novo link
+            </button>
+          )}
         </div>
 
         <aside className="pw-reset-side">
           <ShieldCheck size={34} />
-          <strong>Link de recuperação confirmado</strong>
-          <p>Após salvar, você será direcionado para o login e poderá acessar normalmente.</p>
+          <strong>{hasRecoverySession ? "Link de recuperação confirmado" : "Validação de segurança"}</strong>
+          <p>{hasRecoverySession ? "Após salvar, você será direcionado para o login e poderá acessar normalmente." : "O PIRRIU valida o link antes de permitir a alteração da senha."}</p>
         </aside>
       </section>
     </main>

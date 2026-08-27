@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 import { createClient } from "@/lib/supabase-browser";
@@ -18,12 +18,25 @@ function translateAuthError(message?: string) {
 
 export default function LoginPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const [supabase] = useState(() => createClient());
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const resetError = params.get("reset_error");
+    if (!resetError) return;
+
+    if (resetError === "codigo_ausente") {
+      setMessage("O link de redefinição é inválido. Solicite um novo link.");
+      return;
+    }
+
+    setMessage("O link de redefinição expirou ou já foi utilizado. Solicite um novo link.");
+  }, []);
 
   async function login() {
     setLoading(true);
@@ -47,8 +60,11 @@ export default function LoginPage() {
       return;
     }
 
+    const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || window.location.origin).replace(/\/$/, "");
+    const redirectTo = `${siteUrl}/api/auth/callback?next=/nova-senha`;
+
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || window.location.origin}/api/auth/callback?type=recovery&next=/nova-senha`,
+      redirectTo,
     });
 
     setMessage(error ? translateAuthError(error.message) : "Enviamos um link de redefinição para seu e-mail.");
